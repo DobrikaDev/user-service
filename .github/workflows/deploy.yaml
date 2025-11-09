@@ -48,10 +48,11 @@ jobs:
       - name: Install goose CLI
         run: |
           set -euo pipefail
-          GOOSE_VERSION="v3.18.0"
-          curl -sSfL "https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_Linux_x86_64.tar.gz" -o goose.tar.gz
-          sudo tar -xzf goose.tar.gz -C /usr/local/bin goose
-          rm goose.tar.gz
+          GOOS=$(go env GOOS)
+          GOARCH=$(go env GOARCH)
+          echo "Installing goose for ${GOOS}/${GOARCH}"
+          go install github.com/pressly/goose/v3/cmd/goose@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Run database migrations
         env:
