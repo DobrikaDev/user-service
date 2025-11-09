@@ -106,7 +106,19 @@ func (s *SqlStorage) CreateUser(ctx context.Context, user *domain.User) (*domain
 				now,
 				now,
 			).
-			Suffix("RETURNING max_id, name, geolocation, age, sex, about, role, status, reputation_group_id, created_at, updated_at").
+			Suffix(`
+				ON CONFLICT (max_id) DO UPDATE
+				SET name = EXCLUDED.name,
+					geolocation = EXCLUDED.geolocation,
+					age = EXCLUDED.age,
+					sex = EXCLUDED.sex,
+					about = EXCLUDED.about,
+					role = EXCLUDED.role,
+					status = EXCLUDED.status,
+					reputation_group_id = EXCLUDED.reputation_group_id,
+					updated_at = EXCLUDED.updated_at
+				RETURNING max_id, name, geolocation, age, sex, about, role, status, reputation_group_id, created_at, updated_at
+			`).
 			PlaceholderFormat(sq.Dollar)
 
 		q, args := ib.MustSql()
@@ -138,7 +150,6 @@ func (s *SqlStorage) CreateUser(ctx context.Context, user *domain.User) (*domain
 			return ErrUserInternal
 		}
 
-		balanceID := uuid.NewString()
 		var group domain.ReputationGroup
 		if err := tx.QueryRowContext(
 			txCtx,
@@ -158,27 +169,41 @@ func (s *SqlStorage) CreateUser(ctx context.Context, user *domain.User) (*domain
 			return ErrUserInternal
 		}
 
-		if _, err := tx.ExecContext(
+		var balanceID string
+		balanceQueryErr := tx.QueryRowContext(
 			txCtx,
-			"INSERT INTO balances (id, user_id, balance, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
-			balanceID,
+			"SELECT id FROM balances WHERE user_id = $1",
 			created.MaxID,
-			0,
-			now,
-			now,
-		); err != nil {
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) {
-				switch pgErr.Code {
-				case pgErrUniqueViolation:
-					return ErrBalanceAlreadyExists
-				case pgErrForeignKeyViolation:
-					return ErrUserInvalid
-				}
-			}
+		).Scan(&balanceID)
+		if balanceQueryErr != nil {
+			if errors.Is(balanceQueryErr, sql.ErrNoRows) {
+				balanceID = uuid.NewString()
+				if _, err := tx.ExecContext(
+					txCtx,
+					"INSERT INTO balances (id, user_id, balance, created_at, updated_at) VALUES ($1, $2, $3, $4, $5)",
+					balanceID,
+					created.MaxID,
+					0,
+					now,
+					now,
+				); err != nil {
+					var pgErr *pgconn.PgError
+					if errors.As(err, &pgErr) {
+						switch pgErr.Code {
+						case pgErrUniqueViolation:
+							return ErrBalanceAlreadyExists
+						case pgErrForeignKeyViolation:
+							return ErrUserInvalid
+						}
+					}
 
-			s.logger.Error("failed to create balance for user", zap.Error(err), zap.String("max_id", created.MaxID))
-			return ErrUserInternal
+					s.logger.Error("failed to create balance for user", zap.Error(err), zap.String("max_id", created.MaxID))
+					return ErrUserInternal
+				}
+			} else {
+				s.logger.Error("failed to get balance for user", zap.Error(balanceQueryErr), zap.String("max_id", created.MaxID))
+				return ErrUserInternal
+			}
 		}
 
 		created.ReputationGroup = &group
