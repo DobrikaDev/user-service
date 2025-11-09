@@ -45,7 +45,22 @@ jobs:
         uses: azure/setup-kubectl@v4
         with:
           version: latest
+      - name: Install goose CLI
+        run: |
+          set -euo pipefail
+          GOOSE_VERSION="v3.18.0"
+          curl -sSfL "https://github.com/pressly/goose/releases/download/${GOOSE_VERSION}/goose_Linux_x86_64.tar.gz" -o goose.tar.gz
+          sudo tar -xzf goose.tar.gz -C /usr/local/bin goose
+          rm goose.tar.gz
 
+      - name: Run database migrations
+        env:
+          GOOSE_DRIVER: postgres
+          GOOSE_DBSTRING: postgresql://${{ steps.db-config.outputs.user }}:${{ steps.db-config.outputs.password }}@${{ steps.db-config.outputs.host }}:${{ steps.db-config.outputs.port }}/${{ steps.db-config.outputs.name }}?sslmode=disable
+        run: |
+          set -euo pipefail
+          goose -dir migrations/postgres up
+          
       - name: Configure kubeconfig
         run: |
           mkdir -p "${HOME}/.kube"
@@ -55,11 +70,11 @@ jobs:
 
       - name: Apply Kubernetes manifests
         run: |
-          kubectl apply -f deployments/k8s/namespace.yaml
           kubectl apply -f deployments/k8s/configmap.yaml
           kubectl apply -f deployments/k8s/service.yaml
           kubectl apply -f deployments/k8s/deployment.yaml
 
+      
       - name: Update deployment image
         run: |
           kubectl set image deployment/user-service \
