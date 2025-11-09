@@ -4,7 +4,6 @@ import (
 	"DobrikaDev/user-service/internal/domain"
 	"DobrikaDev/user-service/internal/storage/sql"
 	"context"
-
 	"errors"
 
 	"go.uber.org/zap"
