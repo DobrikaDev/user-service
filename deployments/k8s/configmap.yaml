@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: user-service-config
-  namespace: user-service
+  namespace: default
 data:
   config.yaml: |
     port: 8081
