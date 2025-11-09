@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: user-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: docker.io/slipneff/dobrika-user-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: grpc
+              containerPort: 8081
+          volumeMounts:
+            - name: config
+              mountPath: /app/deployments/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: user-service-config
+            items:
+              - key: config.yaml
+                path: config.yaml
+
