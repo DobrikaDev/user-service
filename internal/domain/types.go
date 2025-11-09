@@ -15,27 +15,6 @@ const (
 	SexUnknown Sex = "unknown"
 )
 
-func SexToSex(sex string) Sex {
-	switch sex {
-	case "male":
-		return SexMale
-	case "female":
-		return SexFemale
-	default:
-		return SexUnknown
-	}
-}
-func RoleToUserRole(role string) UserRole {
-	switch role {
-	case "pending":
-		return UserRoleAdmin
-	case "user":
-		return UserRoleUser
-	default:
-		return UserRoleUser
-	}
-}
-
 func (s UserRole) String() string {
 	return string(s)
 }
