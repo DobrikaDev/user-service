@@ -1,12 +1,14 @@
 package delivery
 
 import (
+	"context"
+	"strings"
+
 	"DobrikaDev/user-service/internal/domain"
 	userpb "DobrikaDev/user-service/internal/generated/proto/user"
 	balance "DobrikaDev/user-service/internal/service/balance"
 	reputationgroup "DobrikaDev/user-service/internal/service/reputation_group"
 	"DobrikaDev/user-service/internal/service/user"
-	"context"
 
 	"github.com/dr3dnought/gospadi"
 	"go.uber.org/zap"
@@ -76,8 +78,26 @@ func (s *Server) GetUserByMaxID(ctx context.Context, req *userpb.GetUserByMaxIDR
 }
 
 func (s *Server) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) (*userpb.UpdateUserResponse, error) {
+	if req.GetUser() == nil || strings.TrimSpace(req.GetUser().GetMaxId()) == "" {
+		return &userpb.UpdateUserResponse{
+			Error: &userpb.Error{
+				Code:    userpb.ErrorCode_ERROR_CODE_VALIDATION,
+				Message: "max_id is required",
+			},
+		}, nil
+	}
 
-	err := s.userService.UpdateUser(ctx, convertUserToDomain(req.User))
+	existing, err := s.userService.GetUserByMaxID(ctx, req.GetUser().GetMaxId())
+	if err != nil {
+		s.logger.Error("failed to fetch user before update", zap.Error(err), zap.String("max_id", req.GetUser().GetMaxId()))
+		return &userpb.UpdateUserResponse{
+			Error: convertErrorToProto(err),
+		}, nil
+	}
+
+	merged := mergeUser(existing, req.GetUser())
+
+	err = s.userService.UpdateUser(ctx, merged)
 	if err != nil {
 		s.logger.Error("failed to update user", zap.Error(err), zap.Any("user", req.User))
 		return &userpb.UpdateUserResponse{
@@ -85,9 +105,11 @@ func (s *Server) UpdateUser(ctx context.Context, req *userpb.UpdateUserRequest) 
 		}, nil
 	}
 
-	s.logger.Debug("user updated", zap.Any("user", req.User))
+	s.logger.Debug("user updated", zap.Any("user", merged))
 
-	return &userpb.UpdateUserResponse{}, nil
+	return &userpb.UpdateUserResponse{
+		User: convertUserToProto(merged),
+	}, nil
 }
 
 func (s *Server) DeleteUser(ctx context.Context, req *userpb.DeleteUserRequest) (*userpb.DeleteUserResponse, error) {
@@ -219,6 +241,48 @@ func convertUserToDomain(user *userpb.User) *domain.User {
 	}
 
 	return domainUser
+}
+
+func mergeUser(existing *domain.User, incoming *userpb.User) *domain.User {
+	merged := *existing
+
+	if incoming == nil {
+		return &merged
+	}
+
+	if name := strings.TrimSpace(incoming.GetName()); name != "" {
+		merged.Name = name
+	}
+	if geo := strings.TrimSpace(incoming.GetGeolocation()); geo != "" {
+		merged.Geolocation = geo
+	}
+	if incoming.GetAge() > 0 {
+		merged.Age = int(incoming.GetAge())
+	}
+	if incoming.GetSex() != userpb.Sex_SEX_UNSPECIFIED {
+		merged.Sex = convertSexToDomain(incoming.GetSex())
+	}
+	if about := strings.TrimSpace(incoming.GetAbout()); about != "" {
+		merged.About = about
+	}
+	if incoming.GetRole() != userpb.Role_ROLE_UNSPECIFIED {
+		merged.Role = convertRoleToDomain(incoming.GetRole())
+	}
+	if incoming.GetStatus() != userpb.Status_STATUS_UNSPECIFIED {
+		merged.Status = convertStatusToDomain(incoming.GetStatus())
+	}
+	if rg := incoming.GetReputationGroup(); rg != nil && rg.GetId() > 0 {
+		merged.ReputationGroupID = int(rg.GetId())
+		merged.ReputationGroup = &domain.ReputationGroup{
+			ID:             int(rg.GetId()),
+			Name:           rg.GetName(),
+			Description:    rg.GetDescription(),
+			Coefficient:    rg.GetCoefficient(),
+			ReputationNeed: int(rg.GetReputationNeed()),
+		}
+	}
+
+	return &merged
 }
 
 func convertStatusToDomain(status userpb.Status) domain.UserStatus {
